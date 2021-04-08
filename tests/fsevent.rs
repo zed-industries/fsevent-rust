@@ -1,4 +1,4 @@
-#![cfg(target_os="macos")]
+#![cfg(target_os = "macos")]
 extern crate fsevent;
 extern crate tempfile;
 extern crate time;
@@ -14,28 +14,30 @@ use std::time::{Duration, SystemTime};
 
 use std::sync::mpsc::{channel, Receiver};
 
-fn validate_recv(rx: Receiver<Event>, evs: Vec<(String, StreamFlags)>) {
+fn validate_recv(rx: Receiver<Vec<Event>>, evs: Vec<(String, StreamFlags)>) {
     let timeout: Duration = Duration::new(5, 0);
     let deadline = SystemTime::now() + timeout;
     let mut evs = evs.clone();
 
     while SystemTime::now() < deadline {
-        if let Ok(actual) = rx.try_recv() {
-            let mut found: Option<usize> = None;
-            for i in 0..evs.len() {
-                let expected = evs.get(i).unwrap();
-                if actual.path == expected.0 && actual.flag == expected.1 {
-                    found = Some(i);
-                    break;
+        if let Ok(actuals) = rx.try_recv() {
+            for actual in actuals {
+                let mut found: Option<usize> = None;
+                for i in 0..evs.len() {
+                    let expected = evs.get(i).unwrap();
+                    if actual.path == expected.0 && actual.flag == expected.1 {
+                        found = Some(i);
+                        break;
+                    }
                 }
-            }
-            if let Some(i) = found {
-                evs.remove(i);
-            } else {
-                assert!(
-                    false,
-                    format!("actual: {:?} not found in expected: {:?}", actual, evs)
-                );
+                if let Some(i) = found {
+                    evs.remove(i);
+                } else {
+                    assert!(
+                        false,
+                        format!("actual: {:?} not found in expected: {:?}", actual, evs)
+                    );
+                }
             }
         }
         if evs.is_empty() {

@@ -1,4 +1,4 @@
-#![cfg(target_os="macos")]
+#![cfg(target_os = "macos")]
 #![deny(
     trivial_numeric_casts,
     unstable_features,
@@ -169,7 +169,7 @@ impl std::fmt::Display for StreamFlags {
     }
 }
 
-fn default_stream_context(event_sender: *const Sender<Event>) -> fs::FSEventStreamContext {
+fn default_stream_context(event_sender: *const Sender<Vec<Event>>) -> fs::FSEventStreamContext {
     let ptr = event_sender as *mut ::std::os::raw::c_void;
     fs::FSEventStreamContext {
         version: 0,
@@ -268,7 +268,7 @@ impl FsEvent {
         latency: cf::CFTimeInterval,
         flags: fs::FSEventStreamCreateFlags,
         paths: FsEventRefWrapper,
-        event_sender: Sender<Event>,
+        event_sender: Sender<Vec<Event>>,
         subscription_handle_sender: Option<Sender<FsEventRefWrapper>>,
     ) -> Result<()> {
         let stream_context = default_stream_context(&event_sender);
@@ -315,7 +315,7 @@ impl FsEvent {
         Ok(())
     }
 
-    pub fn observe(&self, event_sender: Sender<Event>) {
+    pub fn observe(&self, event_sender: Sender<Vec<Event>>) {
         let native_paths = self
             .build_native_paths()
             .expect("Unable to build CFMutableArrayRef of watched paths.");
@@ -331,7 +331,7 @@ impl FsEvent {
         .unwrap();
     }
 
-    pub fn observe_async(&self, event_sender: Sender<Event>) -> Result<FsEventRefWrapper> {
+    pub fn observe_async(&self, event_sender: Sender<Vec<Event>>) -> Result<FsEventRefWrapper> {
         let (ret_tx, ret_rx) = std::sync::mpsc::channel();
         let native_paths = self.build_native_paths()?;
         let safe_native_paths = FsEventRefWrapper::from(native_paths);
@@ -375,13 +375,14 @@ extern "C" fn callback(
         let num = num_events;
         let e_ptr = event_flags as *mut u32;
         let i_ptr = event_ids as *mut u64;
-        let sender = info as *mut Sender<Event>;
+        let sender = info as *mut Sender<Vec<Event>>;
 
         let paths: &[*const ::std::os::raw::c_char] =
             std::mem::transmute(slice::from_raw_parts(event_paths, num));
         let flags = from_raw_parts_mut(e_ptr, num);
         let ids = from_raw_parts_mut(i_ptr, num);
 
+        let mut events = Vec::new();
         for p in 0..num {
             let i = CStr::from_ptr(paths[p]).to_bytes();
             let path = from_utf8(i).expect("Invalid UTF8 string.");
@@ -390,12 +391,12 @@ extern "C" fn callback(
             );
             // println!("{}: {}", ids[p], flag);
 
-            let event = Event {
+            events.push(Event {
                 event_id: ids[p],
                 flag,
                 path: path.to_string(),
-            };
-            let _s = (*sender).send(event);
+            });
         }
+        let _s = (*sender).send(events);
     }
 }
